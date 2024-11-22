@@ -276,7 +276,7 @@ pipelines:
       - parallel: *deploy-all-harness-cdn-migrate-auto
 
   pull-requests:
-    "{bugfix/**,feature/**,fix/**,consolidated/**,chore/**,hotfix/**}":
+    "*":
       - step: *set-version-env
       - parallel: *test-affected
       - step: *check-quality-gate-sonarcloud-fe
