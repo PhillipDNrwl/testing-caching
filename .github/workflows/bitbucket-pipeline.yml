@@ -1,0 +1,284 @@
+definitions:
+  steps:
+    # Lint affected FE changes
+    - step: &lint-affected-fe
+        image: node:20.14.0
+        name: "Linting Affected: Front End"
+        runs-on:
+          - self.hosted
+          - linux
+        memory: 16384
+        size: 4x
+        condition:
+          changesets:
+            includePaths:
+              - "client/**"
+        script:
+          - export PARENT_BRANCH=$BITBUCKET_PR_DESTINATION_BRANCH
+          - if [ -z "$PARENT_BRANCH" ] ; then export PARENT_BRANCH="dev" ; fi
+          - export PARENT_BRANCH_FETCH="origin ${PARENT_BRANCH}:refs/remotes/origin/${PARENT_BRANCH}"
+          - git fetch $PARENT_BRANCH_FETCH
+          - export NODE_OPTIONS=--max-old-space-size=16384
+          - cd client
+          - node -v
+          - npm cache verify
+          - npm ci --log-level verbose
+          - npm run lint:pipeline-affected -- --base=remotes/origin/$PARENT_BRANCH
+
+    # Lint all FE files
+    - step: &lint-all-fe
+        name: "Linting: Front End"
+        image: node:20.14.0
+        runs-on:
+          - self.hosted
+          - linux
+        memory: 16384
+        size: 4x
+        script:
+          - export NX_CLOUD_ACCESS_TOKEN=$NX_TOKEN
+          - export NODE_OPTIONS=--max-old-space-size=16384
+          - cd client
+          - node -v
+          - npm cache verify
+          - npm ci --log-level verbose
+          - npm run lint:pipeline
+
+    # Test affected FE changes
+    - step: &test-affected-fe
+        name: "Running Affected: Front End Tests"
+        condition:
+          changesets:
+            includePaths:
+              - "client/**"
+        image: node:20.14.0
+        runs-on:
+          - self.hosted
+          - linux
+        memory: 16384
+        size: 8x
+        script:
+          - export PARENT_BRANCH=$BITBUCKET_PR_DESTINATION_BRANCH
+          - if [ -z "$PARENT_BRANCH" ] ; then export PARENT_BRANCH="dev" ; fi
+          - export PARENT_BRANCH_FETCH="origin ${PARENT_BRANCH}:refs/remotes/origin/${PARENT_BRANCH}"
+          - git fetch $PARENT_BRANCH_FETCH
+          - export NODE_OPTIONS=--max_old_space_size=16384
+          # see: https://techoverflow.net/2018/06/05/how-to-fix-puppetteer-error-while-loading-shared-libraries-libx11-xcb-so-1-cannot-open-shared-object-file-no-such-file-or-directory/
+          - apt-get update && apt-get install -yq gconf-service libasound2 libatk1.0-0 libc6 libcairo2
+            libcups2 libdbus-1-3 libexpat1 libfontconfig1 libgcc1 libgconf-2-4 libgbm-dev
+            libgdk-pixbuf2.0-0 libglib2.0-0 libgtk-3-0 libnspr4 libpango-1.0-0 libdrm2
+            libpangocairo-1.0-0 libstdc++6 libx11-6 libx11-xcb1 libxcb1 libxcomposite1
+            libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1
+            libxss1 libxtst6 ca-certificates fonts-liberation libnss3 lsb-release
+          - cd client
+          - node -v
+          - npm cache verify
+          - npm ci --log-level verbose
+          - npm run test:pipeline-affected -- --base=remotes/origin/$PARENT_BRANCH
+
+    - step: &test-all-fe
+        name: "Running: Front End Tests"
+        image: node:20.14.0
+        runs-on:
+          - self.hosted
+          - linux
+        memory: 16384
+        size: 8x
+        script:
+          - export NX_CLOUD_ACCESS_TOKEN=$NX_TOKEN
+          - export NODE_OPTIONS=--max-old-space-size=16384
+          # see: https://techoverflow.net/2018/06/05/how-to-fix-puppetteer-error-while-loading-shared-libraries-libx11-xcb-so-1-cannot-open-shared-object-file-no-such-file-or-directory/
+          - apt-get update && apt-get install -yq gconf-service libasound2 libatk1.0-0 libc6 libcairo2
+            libcups2 libdbus-1-3 libexpat1 libfontconfig1 libgcc1 libgconf-2-4 libgbm-dev
+            libgdk-pixbuf2.0-0 libglib2.0-0 libgtk-3-0 libnspr4 libpango-1.0-0 libdrm2
+            libpangocairo-1.0-0 libstdc++6 libx11-6 libx11-xcb1 libxcb1 libxcomposite1
+            libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1
+            libxss1 libxtst6 ca-certificates fonts-liberation libnss3 lsb-release
+          - cd client
+          - node -v
+          - npm cache verify
+          - npm ci --log-level verbose
+          - npm run test:pipeline
+
+    # parallel: &test-nx
+    - parallel: &test-nx
+        # Run FE Linting
+        - step: *lint-all-fe
+        # Run FE tests
+        - step: *test-all-fe
+
+    # parallel: &test-affected
+    - parallel: &test-affected
+        # Run FE linting
+        - step: *lint-affected-fe
+        # Run FE tests
+        - step: *test-affected-fe
+
+    # step: &build-fe-nx
+    - step: &build-fe-nx
+        name: "Build: Frontend"
+        image: node:20.14.0
+        runs-on:
+          - self.hosted
+          - linux
+        memory: 16384
+        size: 4x
+        artifacts:
+          - Mosaic.Api.Backend/wwwroot/**
+          - Mosaic.Api.BackendAdmin/wwwroot/**
+        script:
+          - source .version_env
+          - export NX_CLOUD_ACCESS_TOKEN=$NX_TOKEN
+          - export NODE_OPTIONS=--max_old_space_size=16384
+          - node -v
+          - cd client
+          - npm cache verify
+          - npm ci --log-level verbose
+          - npm run build --loglevel verbose
+
+pipelines:
+  branches:
+    "{dev}":
+      - step: *set-version-env
+      - parallel: *test-nx
+      - step: *build-fe-nx
+      - parallel: *build-docker-all
+      - step:
+          <<: *set-deployment-env
+          name: "Setup: Set Dev Deployment Environment Variables"
+          deployment: Development
+      - parallel: *deploy-all-harness-cdn-migrate-auto
+
+    "{hotfix-release/**}":
+      - step: *set-version-env
+      - parallel: *test-nx
+      - step: *build-fe-nx
+      - parallel: *build-docker-all
+      - step:
+          <<: *set-deployment-env
+          name: "Setup: Set Parallel-Production-Hotfix Deployment Environment Variables"
+          deployment: Parallel-Production-Hotfix
+      - parallel: *deploy-all-harness-cdn-migrate-auto
+      - step:
+          <<: *set-deployment-env
+          name: "Setup: Set Production Deployment Environment Variables"
+          deployment: Production
+          trigger: manual
+      - step:
+          <<: *migrate-db
+          trigger: manual
+          name: "Migrate: Production DB"
+      - parallel:
+          - step:
+              <<: *deploy-harness-app-server
+              trigger: manual
+              name: "Deploy: App-server to Production"
+          - step:
+              <<: *deploy-harness-scheduler
+              trigger: manual
+              name: "Deploy: Scheduler to Production"
+          - step:
+              <<: *deploy-harness-public-api
+              trigger: manual
+              name: "Deploy: PublicAPI to Production"
+          - step:
+              <<: *deploy-harness-admin
+              trigger: manual
+              name: "Deploy: Backend Admin to Production"
+          - step:
+              <<: *deploy-fe-s3
+              trigger: manual
+              name: "Deploy: FE Static Assets to S3"
+
+    "{release/**}":
+      - step: *set-version-env
+      - step: *build-fe-nx
+      - parallel: *build-docker-all
+      - step:
+          <<: *set-deployment-env
+          name: "Setup: Set Parallel-Production-UAT Deployment Environment Variables"
+          deployment: Parallel-Production-UAT
+      - parallel: *deploy-all-harness-cdn-migrate-auto
+      - step: *set-cypress-release-env
+      - step:
+          <<: *run-cypress-tests
+          name: "Run Cypress tests against Parallel-Prod-UAT"
+          deployment: Parallel-Prod-UAT-Cypress
+          trigger: automatic
+      - step:
+          <<: *set-deployment-env
+          name: "Setup: Set Production Deployment Environment Variables"
+          deployment: Production
+          trigger: manual
+      - step:
+          <<: *migrate-db
+          trigger: manual
+          name: "Migrate: Production DB"
+      - parallel:
+          - step:
+              <<: *deploy-harness-app-server
+              trigger: manual
+              name: "Deploy: App-server to Production"
+          - step:
+              <<: *deploy-harness-scheduler
+              trigger: manual
+              name: "Deploy: Scheduler to Production"
+          - step:
+              <<: *deploy-harness-public-api
+              trigger: manual
+              name: "Deploy: PublicAPI to Production"
+          - step:
+              <<: *deploy-harness-admin
+              trigger: manual
+              name: "Deploy: Backend Admin to Production"
+          - step:
+              <<: *deploy-fe-s3
+              trigger: manual
+              name: "Deploy: FE Static Assets to S3"
+
+    "{master}":
+      - step: *set-version-env
+      - step: *build-fe-nx
+      - parallel: *build-docker-all
+      - step:
+          <<: *set-deployment-env
+          name: "Setup: Set Staging-Master Deployment Environment Variables"
+          deployment: Staging-Master
+      - parallel: *deploy-all-harness-cdn-migrate-auto
+
+    "{experimental/fm-sme}":
+      - step: *set-version-env
+      - step: *build-fe-nx
+      - parallel: *build-docker-all
+      - step:
+          <<: *set-deployment-env
+          name: "Setup: Set Staging-Topline Deployment Environment Variables"
+          deployment: Staging-Topline
+      - parallel: *deploy-all-harness-cdn-migrate-auto
+
+    "{experimental/staging-analysis-sme}":
+      - step: *set-version-env
+      - step: *build-fe-nx
+      - parallel: *build-docker-all
+      - step:
+          <<: *set-deployment-env
+          name: "Setup: Set Staging-Analysis Deployment Environment Variables"
+          deployment: Staging-Analysis
+      - parallel: *deploy-all-harness-cdn-migrate-auto
+
+    "{experimental/dm-sme}":
+      - step: *set-version-env
+      - step: *build-fe-nx
+      - parallel: *build-docker-all
+      - step:
+          <<: *set-deployment-env
+          name: "Setup: Set Staging-Auth Deployment Environment Variables"
+          deployment: Staging-Auth
+      - parallel: *deploy-all-harness-cdn-migrate-auto
+
+  pull-requests:
+    "{bugfix/**,feature/**,fix/**,consolidated/**,chore/**,hotfix/**}":
+      - step: *set-version-env
+      - parallel: *test-affected
+      - step: *check-quality-gate-sonarcloud-fe
+      - step: *build-fe-nx
+      - parallel: *build-all
