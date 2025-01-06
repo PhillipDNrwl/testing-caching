@@ -1,7 +1,10 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "namedInputs": {
-    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals"
+    ],
     "production": [
       "default",
       "!{projectRoot}/**/?(*.)+(spec|test).[jt]s?(x)?(.snap)",
@@ -44,17 +47,23 @@
       "options": {
         "targetName": "e2e"
       }
-      
     }
   ],
   "targetDefaults": {
     "@nx/remix:build": {
       "cache": true,
-      "dependsOn": ["^build"],
-      "inputs": ["production", "^production"]
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "production",
+        "^production"
+      ]
     },
     "e2e-ci--**/*": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     }
   },
   "nxCloudUrl": "https://staging.nx.app",
@@ -64,5 +73,7 @@
         "unitTestRunner": "vitest"
       }
     }
-  }
+  },
+  "defaultBase": "main",
+  "nxCloudId": "677c167aab077340d9c815dd"
 }
