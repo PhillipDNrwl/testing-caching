@@ -1,15 +1,15 @@
-name: CI - Staging
+name: CI
 
 on:
   push:
     branches:
-      # Specify your staging branch
-      - staging
+      # Trigger workflow on the main branch
+      - main
   pull_request:
     branches:
-      - staging
+      - main
 
-# Needed for nx-set-shas when run on the staging branch
+# Needed for nx-set-shas when run on the main branch
 permissions:
   actions: read
   contents: read
@@ -27,7 +27,7 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      # Enable distribution for staging
+      # Enable distribution with specific configurations
       - run: |
           npx nx-cloud start-ci-run \
             --distribute-on="3 linux-small-js, 2 linux-medium-js, 1 linux-large-js" \
@@ -37,19 +37,27 @@ jobs:
 
       - uses: nrwl/nx-set-shas@v4
 
-      # Specify targets for staging
-      - run: npx nx-cloud record -- nx format:check
-      - run: npx nx affected -t lint test build e2e-ci --configuration=staging
-
-      # Define assignment rules for staging
+      # Specify assignment rules
       - run: |
-          echo "Setting assignment rules for staging..."
+          echo "Setting assignment rules..."
           npx nx-cloud set-assignment-rules \
             --rules='[
               {
-                "project": "app1",
-                "target": "build",
+                "project": "chaotic-koala",
+                "runsOn": ["linux-medium-js", "linux-large-js"]
+              },
+              {
+                "target": "lint",
                 "configuration": "staging",
-                "runsOn": ["linux-large-js", "linux-medium-js"]
+                "runsOn": ["linux-large-js"]
+              },
+              {
+                "project": "lib1",
+                "target": "test",
+                "runsOn": ["linux-medium-js"]
               }
             ]'
+
+      # Run affected targets
+      - run: npx nx-cloud record -- nx format:check
+      - run: npx nx affected -t lint test build e2e-ci
