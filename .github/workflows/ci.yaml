@@ -1,13 +1,15 @@
-name: CI
+name: CI - Staging
 
 on:
   push:
     branches:
-      # Change this if your primary branch is not main
-      - main
+      # Specify your staging branch
+      - staging
   pull_request:
+    branches:
+      - staging
 
-# Needed for nx-set-shas when run on the main branch
+# Needed for nx-set-shas when run on the staging branch
 permissions:
   actions: read
   contents: read
@@ -20,25 +22,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Restore Node Modules Cache
-      - name: Restore Node Modules Cache
-        uses: 'nrwl/nx-cloud-workflows/support-home-dir-tilda/workflow-steps/cache/main.yaml'
-        inputs:
-          key: 'package-lock.json|yarn.lock|pnpm-lock.yaml|"24"'
-          paths: node_modules
-          base-branch: 'main'
-
       - uses: actions/setup-node@v3
         with:
           node-version: 20
           cache: 'npm'
 
-      # This line enables distribution
-      # The "--stop-agents-after" is optional, but allows idle agents to shut down once the "e2e-ci" targets have been requested
-      - run: npx nx-cloud start-ci-run --distribute-on="2 linux-small-js, 1 linux-medium-js" --stop-agents-after="e2e-ci"
+      # Enable distribution for staging
+      - run: |
+          npx nx-cloud start-ci-run \
+            --distribute-on="3 linux-small-js, 2 linux-medium-js, 1 linux-large-js" \
+            --stop-agents-after="e2e-ci"
+
       - run: npm ci --legacy-peer-deps
 
       - uses: nrwl/nx-set-shas@v4
 
+      # Specify targets for staging
       - run: npx nx-cloud record -- nx format:check
-      - run: npx nx affected -t lint test build e2e-ci
+      - run: npx nx affected -t lint test build e2e-ci --configuration=staging
+
+      # Define assignment rules for staging
+      - run: |
+          echo "Setting assignment rules for staging..."
+          npx nx-cloud set-assignment-rules \
+            --rules='[
+              {
+                "project": "app1",
+                "target": "build",
+                "configuration": "staging",
+                "runsOn": ["linux-large-js", "linux-medium-js"]
+              }
+            ]'
